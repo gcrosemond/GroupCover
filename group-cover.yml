@@ -2,6 +2,7 @@ name: Group Cover
 
 description: Generate a portrait cover image from a group's child group images.
 version: 0.1.0
+url: https://github.com/gcrosemond/GroupCover
 
 exec:
   - group-cover

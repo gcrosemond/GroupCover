@@ -64,6 +64,55 @@ and rotation.
 The frontend consists of `group-cover.js` and `group-cover.css`, which are
 loaded by the plugin manifest.
 
+## Distribution Builds
+
+Build packages for the supported Stash platforms with:
+
+```sh
+make package
+```
+
+This creates a plugin directory and ZIP archive for each target under `dist/`:
+
+- `darwin-amd64`
+- `darwin-arm64`
+- `linux-amd64`
+- `linux-arm64`
+- `windows-amd64`
+- `freebsd-amd64`
+
+Each package contains the platform-specific `group-cover` executable and the
+manifest, frontend assets, license, and README. The executable is built with
+`CGO_ENABLED=0`, so no target-platform C compiler is required.
+
+## Publishing A Package Source
+
+Stash package sources are YAML indexes hosted at a public URL. This repository
+includes a GitHub Actions workflow at `.github/workflows/publish-pages.yml`
+that publishes one index containing a separate package entry for each platform.
+
+To enable publishing:
+
+1. In GitHub, open **Settings > Pages** for the repository.
+2. Set the Pages source to **GitHub Actions**.
+3. Push a version tag such as `v0.1.0`.
+4. Add this source URL in Stash:
+
+```text
+https://gcrosemond.github.io/GroupCover/index.yml
+```
+
+The source lists one package per platform. Install the entry matching the host
+platform; Stash does not automatically filter entries by operating system. The
+package manager verifies the ZIP using the SHA-256 value in the index. The same
+site can be generated locally with:
+
+```sh
+make site VERSION=0.1.0
+```
+
+The generated `site/` directory is ready to publish as a static site.
+
 ## Usage
 
 1. Open a group that has child groups with front images.
@@ -86,6 +135,9 @@ node --check group-cover.js
 GOCACHE=/tmp/group-cover-gocache go test ./...
 GOCACHE=/tmp/group-cover-gocache go build -o group-cover .
 ```
+
+Use `make validate` for the equivalent JavaScript syntax check, Go tests, and
+`go vet` check. Use `make clean` to remove local and distribution builds.
 
 There are currently no Go unit tests in this plugin, so `go test ./...`
 primarily verifies that the backend compiles and its package is valid.

@@ -2,3 +2,5 @@ group-cover
 .DS_Store
 *.test
 coverage.out
+dist/
+site/
