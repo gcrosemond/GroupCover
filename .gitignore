@@ -1,0 +1,4 @@
+group-cover
+.DS_Store
+*.test
+coverage.out
