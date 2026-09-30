@@ -6,6 +6,16 @@ front images of its child groups.
 The plugin adds a camera button to the group page. Clicking it opens a modal
 where the composition can be previewed and adjusted before the cover is saved.
 
+## Screenshots
+
+The camera button is available next to the group cover:
+
+![Group page with the Group Cover button](screenshots/01.png)
+
+Clicking the button opens the layout and generation modal:
+
+![Group Cover generation modal](screenshots/02.png)
+
 ## Features
 
 - Uses child group front images as the source material.
