@@ -36,26 +36,58 @@ Clicking the button opens the layout and generation modal:
 
 ## Installation
 
-Copy the complete plugin directory into the Stash plugins directory and make
-sure the executable is present and executable:
+### Stash plugin source (recommended)
 
-```sh
-chmod +x group-cover
-```
+1. Open **Settings > Plugins** in Stash.
+2. Under **Available Plugins**, add this package source:
 
-The directory should contain:
+   ```text
+   https://gcrosemond.github.io/GroupCover/index.yml
+   ```
 
-```text
-group-cover/
-  group-cover
-  group-cover.yml
-  group-cover.js
-  group-cover.css
-```
+3. Reload the available plugins if necessary.
+4. Install **Group Cover** for the platform running your Stash instance.
 
-Reload the Stash UI, or restart Stash if the plugin is not detected. The plugin
-manifest is `group-cover.yml`; the executable is a raw-interface plugin using
-the standard Stash plugin input and output protocol.
+Updates published by the source will appear in Stash's plugin manager.
+
+### Release ZIP
+
+1. Download the archive for your platform from the [latest GitHub release](https://github.com/gcrosemond/GroupCover/releases/latest).
+
+   Available archives use this naming scheme:
+
+   ```text
+   group-cover-darwin-arm64.zip
+   group-cover-darwin-amd64.zip
+   group-cover-linux-arm64.zip
+   group-cover-linux-amd64.zip
+   group-cover-windows-amd64.zip
+   group-cover-freebsd-amd64.zip
+   ```
+
+2. Create a `group-cover` directory inside your Stash plugins directory.
+3. Extract the downloaded archive into that directory. The resulting layout
+   should contain:
+
+   ```text
+   plugins/
+   └── group-cover/
+       ├── group-cover
+       ├── group-cover.yml
+       ├── group-cover.js
+       └── group-cover.css
+   ```
+
+4. On macOS or Linux, make the executable runnable:
+
+   ```sh
+   chmod +x group-cover
+   ```
+
+5. In Stash, open **Settings > Plugins** and select **Reload Plugins**.
+
+The default plugin directory is the `plugins` directory beside the Stash
+configuration file. Your configured plugin path may be different.
 
 ## Building From Source
 
