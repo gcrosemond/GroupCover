@@ -160,7 +160,7 @@ The generated `site/` directory is ready to publish as a static site.
 
 1. Open a group that has child groups with front images.
 2. Click the camera button near the group image.
-3. Choose how many child images to include; **All** is selected by default.
+3. Choose how many child images to include; enter `0` to include all images.
 4. Select an aspect ratio and gutter settings.
 5. Select a layout from the visual layout strip.
 6. For Grid, choose one of the dynamically generated schematic arrangements.

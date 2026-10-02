@@ -748,10 +748,8 @@
         <div class="group-cover-modal-body">
           <aside class="group-cover-settings">
             <h3>Settings</h3>
-            <label class="group-cover-select-field">Child images
-              <select data-image-count>
-                <option value="0">All</option>
-              </select>
+            <label class="group-cover-select-field">Child images (0 = all)
+              <input type="number" min="0" value="0" data-image-count>
             </label>
             <fieldset>
               <legend>Aspect</legend>
@@ -840,15 +838,13 @@
       return selectedPreviewImages().length;
     }
 
-    function updateImageCountOptions() {
-      const select = overlay.querySelector("[data-image-count]");
-      if (!select) return;
+    function updateImageCountInput() {
+      const input = overlay.querySelector("[data-image-count]");
+      if (!input) return;
       const total = previewImages.length;
-      if (state.imageCount > total) state.imageCount = 0;
-      select.innerHTML = [`<option value="0">All (${total})</option>`]
-        .concat(Array.from({ length: total }, (_, index) => `<option value="${index + 1}">${index + 1}</option>`))
-        .join("");
-      select.value = String(state.imageCount);
+      if (state.imageCount > total) state.imageCount = total;
+      input.max = String(total);
+      input.value = String(state.imageCount);
     }
 
     function updateCompositionOptions(count) {
@@ -872,8 +868,11 @@
       }).join("");
     }
 
-    overlay.querySelector("[data-image-count]").addEventListener("change", (event) => {
-      state.imageCount = Number(event.target.value) || 0;
+    overlay.querySelector("[data-image-count]").addEventListener("input", (event) => {
+      const total = previewImages.length;
+      const requested = Number(event.target.value);
+      state.imageCount = Number.isFinite(requested) ? Math.max(0, Math.min(total || requested, requested)) : 0;
+      event.target.value = String(state.imageCount);
       const count = selectedImageCount();
       if (state.design === "stack" && state.angleAuto) {
         state.angle = fanDefaultAngle(count);
@@ -1022,7 +1021,7 @@
     renderPreviews();
     loadPreviewImages(groupID, overlay, (images) => {
       previewImages = images;
-      updateImageCountOptions();
+      updateImageCountInput();
       if (state.design === "stack" && state.angleAuto) state.angle = fanDefaultAngle(selectedImageCount());
       updateCompositionOptions(selectedImageCount());
       if (state.design === "stack" && state.fanSpacingAuto) state.fanSpacing = fanDefaultSpacing(selectedImageCount());
