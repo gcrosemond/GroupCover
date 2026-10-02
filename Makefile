@@ -3,7 +3,7 @@ DIST := dist
 
 PACKAGE_FILES := group-cover.yml group-cover.js group-cover.css LICENSE README.md
 TARGETS := darwin-amd64 darwin-arm64 linux-amd64 linux-arm64 windows-amd64 freebsd-amd64
-VERSION ?= 0.1.0
+VERSION ?= 0.2.0
 SOURCE_REPOSITORY ?= https://github.com/gcrosemond/GroupCover
 PUBLISH_DATE ?= $(shell date -u '+%Y-%m-%d %H:%M:%S')
 SITE := site
