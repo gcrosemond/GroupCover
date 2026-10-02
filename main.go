@@ -424,6 +424,12 @@ func drawGrid(canvas draw.Image, images []image.Image, area image.Rectangle, gut
 	if len(images) == 0 {
 		return
 	}
+	if cells := diagonalGridCells(area, gutter, layout, len(images)); cells != nil {
+		for index, source := range images {
+			drawMaskedCell(canvas, source, cells[index], corner, radius)
+		}
+		return
+	}
 	columns := gridColumns(layout, len(images))
 	rows := (len(images) + columns - 1) / columns
 	cellHeight := (area.Dy() - (rows-1)*gutter) / rows
@@ -437,6 +443,186 @@ func drawGrid(canvas draw.Image, images []image.Image, area image.Rectangle, gut
 		y := area.Min.Y + row*(cellHeight+gutter)
 		drawMaskedCell(canvas, source, image.Rect(x, y, x+cellWidth, y+cellHeight), corner, radius)
 	}
+}
+
+type diagonalGridSpec struct {
+	direction     string
+	compact       bool
+	featuredCount int
+	columns       int
+	rows          int
+}
+
+func diagonalGridSpecFor(layout string, count int) (diagonalGridSpec, bool) {
+	if count < 4 || !strings.HasPrefix(layout, "grid-diagonal-") {
+		return diagonalGridSpec{}, false
+	}
+	parts := strings.Split(strings.TrimPrefix(layout, "grid-diagonal-"), "-")
+	if len(parts) < 2 || len(parts) > 3 || (parts[0] != "main" && parts[0] != "reverse") {
+		return diagonalGridSpec{}, false
+	}
+	compact := false
+	countPart := parts[1]
+	if len(parts) == 3 {
+		if parts[1] != "compact" {
+			return diagonalGridSpec{}, false
+		}
+		compact = true
+		countPart = parts[2]
+	}
+	featuredCount, err := strconv.Atoi(countPart)
+	if err != nil || featuredCount < 1 || featuredCount > 3 {
+		return diagonalGridSpec{}, false
+	}
+	columns, rows := gridArrangementDimensions(count)
+	return diagonalGridSpec{
+		direction:     parts[0],
+		compact:       compact,
+		featuredCount: minInt(featuredCount, minInt(columns, rows)),
+		columns:       columns,
+		rows:          rows,
+	}, true
+}
+
+func gridArrangementDimensions(count int) (int, int) {
+	if count <= 1 {
+		return 1, 1
+	}
+	limit := minInt(count, 4)
+	bestColumns, bestRows := 1, count
+	bestDifference := absInt(bestColumns - bestRows)
+	completeColumns, completeRows := 0, 0
+	completeDifference := math.MaxInt
+	for columns := 2; columns <= limit; columns++ {
+		rows := (count + columns - 1) / columns
+		difference := absInt(columns - rows)
+		if difference < bestDifference {
+			bestColumns, bestRows, bestDifference = columns, rows, difference
+		}
+		if count%columns == 0 && difference < completeDifference {
+			completeColumns, completeRows, completeDifference = columns, rows, difference
+		}
+	}
+	if completeColumns > 0 {
+		return completeColumns, completeRows
+	}
+	return bestColumns, bestRows
+}
+
+type gridCellSlot struct {
+	rect     image.Rectangle
+	featured bool
+}
+
+func tileGridCells(area image.Rectangle, gutter, count, columns int) []gridCellSlot {
+	if count <= 0 || area.Dx() <= 0 || area.Dy() <= 0 {
+		return nil
+	}
+	columns = maxInt(1, columns)
+	rows := (count + columns - 1) / columns
+	totalHeight := area.Dy() - (rows-1)*gutter
+	cells := make([]gridCellSlot, 0, count)
+	y := area.Min.Y
+	for row := 0; row < rows; row++ {
+		rowCount := minInt(columns, count-row*columns)
+		cellHeight := totalHeight / rows
+		if row == rows-1 {
+			cellHeight = area.Max.Y - y
+		}
+		totalWidth := area.Dx() - (rowCount-1)*gutter
+		x := area.Min.X
+		for column := 0; column < rowCount; column++ {
+			cellWidth := totalWidth / rowCount
+			if column == rowCount-1 {
+				cellWidth = area.Max.X - x
+			}
+			cells = append(cells, gridCellSlot{rect: image.Rect(x, y, x+cellWidth, y+cellHeight)})
+			x += cellWidth + gutter
+		}
+		y += cellHeight + gutter
+	}
+	return cells
+}
+
+func diagonalGridCells(area image.Rectangle, gutter int, layout string, count int) []image.Rectangle {
+	spec, ok := diagonalGridSpecFor(layout, count)
+	if !ok {
+		return nil
+	}
+	rows := 2
+	if spec.featuredCount == 3 {
+		rows = 3
+	}
+	rowCounts := make([]int, rows)
+	for row := range rowCounts {
+		rowCounts[row] = count / rows
+		if row < count%rows {
+			rowCounts[row]++
+		}
+	}
+	featureWidthRatio := 0.54
+	if spec.compact {
+		featureWidthRatio = 0.42
+	}
+	featureWidth := minInt(area.Dx()-2*gutter, int(float64(area.Dx())*featureWidthRatio))
+	bandHeight := (area.Dy() - (rows-1)*gutter) / rows
+	slots := make([]gridCellSlot, 0, count)
+	for row := 0; row < rows; row++ {
+		hasFeature := row < spec.featuredCount
+		nonFeaturedCount := rowCounts[row]
+		if hasFeature {
+			nonFeaturedCount--
+		}
+		bandY := area.Min.Y + row*(bandHeight+gutter)
+		if !hasFeature {
+			columns := minInt(4, maxInt(1, int(math.Ceil(math.Sqrt(float64(rowCounts[row]))))))
+			slots = append(slots, tileGridCells(image.Rect(area.Min.X, bandY, area.Max.X, bandY+bandHeight), gutter, rowCounts[row], columns)...)
+			continue
+		}
+		featureSide := row
+		if spec.direction == "reverse" {
+			featureSide = rows - 1 - row
+		}
+		centerFeature := spec.featuredCount == 3 && row == 1
+		if centerFeature {
+			remainingWidth := area.Dx() - featureWidth - 2*gutter
+			sideWidth := remainingWidth / 2
+			leftCount := (nonFeaturedCount + 1) / 2
+			rightCount := nonFeaturedCount - leftCount
+			bandArea := image.Rect(area.Min.X, bandY, area.Max.X, bandY+bandHeight)
+			slots = append(slots, tileGridCells(image.Rect(bandArea.Min.X, bandArea.Min.Y, bandArea.Min.X+sideWidth, bandArea.Max.Y), gutter, leftCount, minInt(2, maxInt(1, leftCount)))...)
+			slots = append(slots, gridCellSlot{rect: image.Rect(bandArea.Min.X+sideWidth+gutter, bandArea.Min.Y, bandArea.Min.X+sideWidth+gutter+featureWidth, bandArea.Max.Y), featured: true})
+			slots = append(slots, tileGridCells(image.Rect(bandArea.Min.X+sideWidth+featureWidth+2*gutter, bandArea.Min.Y, bandArea.Max.X, bandArea.Max.Y), gutter, rightCount, minInt(2, maxInt(1, rightCount)))...)
+			continue
+		}
+		featureOnLeft := featureSide == 0
+		featureX := area.Min.X
+		remainingX := area.Min.X + featureWidth + gutter
+		if !featureOnLeft {
+			featureX = area.Max.X - featureWidth
+			remainingX = area.Min.X
+		}
+		bandArea := image.Rect(area.Min.X, bandY, area.Max.X, bandY+bandHeight)
+		slots = append(slots, gridCellSlot{rect: image.Rect(featureX, bandArea.Min.Y, featureX+featureWidth, bandArea.Max.Y), featured: true})
+		slots = append(slots, tileGridCells(image.Rect(remainingX, bandArea.Min.Y, remainingX+area.Dx()-featureWidth-gutter, bandArea.Max.Y), gutter, nonFeaturedCount, minInt(2, maxInt(1, nonFeaturedCount)))...)
+	}
+
+	cells := make([]image.Rectangle, count)
+	featureIndex := 0
+	regularIndex := spec.featuredCount
+	for _, slot := range slots {
+		if slot.featured {
+			cells[featureIndex] = slot.rect
+			featureIndex++
+		}
+	}
+	for _, slot := range slots {
+		if !slot.featured {
+			cells[regularIndex] = slot.rect
+			regularIndex++
+		}
+	}
+	return cells
 }
 
 func drawHero(canvas draw.Image, images []image.Image, area image.Rectangle, gutter int, corner string, radius, heroIndex int, layout string) {
@@ -816,4 +1002,11 @@ func maxInt(left, right int) int {
 		return left
 	}
 	return right
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
 }

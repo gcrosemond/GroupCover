@@ -25,7 +25,8 @@ Clicking the button opens the layout and generation modal:
   for the final image.
 - Supports these layouts:
   - **Grid**: dynamically generated row and column arrangements based on the
-    number of child images.
+    number of child images, including main- and reverse-diagonal arrangements
+    with one, two, or three larger images in regular or compact sizes.
   - **Hero**: choose a child image visually and place it left, right, top,
     bottom, or centered when enough images are available.
   - **Diagonal**: sliced diagonal composition with adjustable direction and

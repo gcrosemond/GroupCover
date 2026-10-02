@@ -95,12 +95,139 @@
     return total * 100 / (count - 1);
   }
 
+  function gridDimensions(count) {
+    if (count <= 1) return { columns: 1, rows: 1 };
+    const candidates = Array.from({ length: Math.min(count, 4) }, (_, index) => index + 1)
+      .map((columns) => ({ columns, rows: Math.ceil(count / columns) }))
+      .sort((left, right) => Math.abs(left.columns - left.rows) - Math.abs(right.columns - right.rows));
+    return candidates.find(({ columns }) => columns > 1 && count % columns === 0) || candidates[0];
+  }
+
+  function diagonalGridSpec(layout, count) {
+    const match = String(layout).match(/^grid-diagonal-(main|reverse)-(compact-)?([123])$/);
+    if (!match || count < 4) return null;
+    const dimensions = gridDimensions(count);
+    return {
+      direction: match[1],
+      compact: Boolean(match[2]),
+      featuredCount: Math.min(Number(match[3]), dimensions.columns, dimensions.rows),
+      ...dimensions,
+    };
+  }
+
+  function diagonalFeatureKeys(spec) {
+    const keys = new Set();
+    for (let index = 0; index < spec.featuredCount; index += 1) {
+      const position = spec.featuredCount === 1 ? 0 : index / (spec.featuredCount - 1);
+      const row = Math.round(position * (spec.rows - 1));
+      const diagonalColumn = Math.round(position * (spec.columns - 1));
+      const column = spec.direction === "main" ? diagonalColumn : spec.columns - 1 - diagonalColumn;
+      keys.add(`${row}:${column}`);
+    }
+    return keys;
+  }
+
+  function tileGridCells(x, y, width, height, gutter, count, columns) {
+    if (count <= 0 || width <= 0 || height <= 0) return [];
+    const rows = Math.ceil(count / columns);
+    const cells = [];
+    const totalHeight = height - (rows - 1) * gutter;
+    let currentY = y;
+    for (let row = 0; row < rows; row += 1) {
+      const rowCount = Math.min(columns, count - row * columns);
+      const cellHeight = row === rows - 1 ? y + height - currentY : totalHeight / rows;
+      const totalWidth = width - (rowCount - 1) * gutter;
+      let currentX = x;
+      for (let column = 0; column < rowCount; column += 1) {
+        const cellWidth = column === rowCount - 1 ? x + width - currentX : totalWidth / rowCount;
+        cells.push({ x: currentX, y: currentY, width: cellWidth, height: cellHeight, featured: false });
+        currentX += cellWidth + gutter;
+      }
+      currentY += cellHeight + gutter;
+    }
+    return cells;
+  }
+
+  function diagonalGridCells(width, height, gutter, layout, count) {
+    const spec = diagonalGridSpec(layout, count);
+    if (!spec) return null;
+    const rows = spec.featuredCount === 3 ? 3 : 2;
+    const rowCounts = Array.from({ length: rows }, (_, row) => Math.floor(count / rows) + (row < count % rows ? 1 : 0));
+    const featureWidth = Math.min(width - gutter * 2, width * (spec.compact ? 0.42 : 0.54));
+    const bandHeight = (height - (rows - 1) * gutter) / rows;
+    const slots = [];
+    const featureSlots = [];
+    for (let row = 0; row < rows; row += 1) {
+      const hasFeature = row < spec.featuredCount;
+      const nonFeaturedCount = rowCounts[row] - (hasFeature ? 1 : 0);
+      const featureSide = spec.direction === "main" ? row : rows - 1 - row;
+      const centerFeature = spec.featuredCount === 3 && row === 1;
+      if (!hasFeature) {
+        slots.push(...tileGridCells(0, row * (bandHeight + gutter), width, bandHeight, gutter, rowCounts[row], Math.min(4, Math.max(1, Math.ceil(Math.sqrt(rowCounts[row]))))));
+        continue;
+      }
+      if (centerFeature) {
+        const remainingWidth = width - featureWidth - gutter * 2;
+        const sideWidth = remainingWidth / 2;
+        const leftCount = Math.ceil(nonFeaturedCount / 2);
+        const rightCount = nonFeaturedCount - leftCount;
+        slots.push(...tileGridCells(0, row * (bandHeight + gutter), sideWidth, bandHeight, gutter, leftCount, Math.min(2, Math.max(1, leftCount))));
+        const feature = { x: sideWidth + gutter, y: row * (bandHeight + gutter), width: featureWidth, height: bandHeight, featured: true };
+        featureSlots.push(feature);
+        slots.push(feature);
+        slots.push(...tileGridCells(sideWidth + featureWidth + gutter * 2, row * (bandHeight + gutter), sideWidth, bandHeight, gutter, rightCount, Math.min(2, Math.max(1, rightCount))));
+        continue;
+      }
+      const featureOnLeft = featureSide === 0;
+      const featureX = featureOnLeft ? 0 : width - featureWidth;
+      const remainingX = featureOnLeft ? featureWidth + gutter : 0;
+      const remainingWidth = width - featureWidth - gutter;
+      const feature = { x: featureX, y: row * (bandHeight + gutter), width: featureWidth, height: bandHeight, featured: true };
+      featureSlots.push(feature);
+      slots.push(feature);
+      slots.push(...tileGridCells(remainingX, row * (bandHeight + gutter), remainingWidth, bandHeight, gutter, nonFeaturedCount, Math.min(2, Math.max(1, nonFeaturedCount))));
+    }
+    const ordered = [];
+    let featureIndex = 0;
+    let regularIndex = spec.featuredCount;
+    const regularSlots = slots.filter((slot) => !slot.featured);
+    for (const slot of slots) {
+      if (slot.featured) {
+        ordered[featureIndex] = slot;
+        featureIndex += 1;
+      }
+    }
+    for (const slot of regularSlots) {
+      ordered[regularIndex] = slot;
+      regularIndex += 1;
+    }
+    return ordered;
+  }
+
   function gridLayoutOptions(count) {
     if (count <= 1) return [{ value: "grid-1x1", label: "1 column x 1 row" }];
-    return Array.from({ length: Math.min(count, 4) }, (_, index) => index + 1)
+    const options = Array.from({ length: Math.min(count, 4) }, (_, index) => index + 1)
       .map((columns) => ({ columns, rows: Math.ceil(count / columns) }))
       .sort((left, right) => Math.abs(left.columns - left.rows) - Math.abs(right.columns - right.rows))
       .map(({ columns, rows }) => ({ value: `grid-${columns}x${rows}`, label: `${columns} column${columns === 1 ? "" : "s"} x ${rows} row${rows === 1 ? "" : "s"}` }));
+    if (count >= 4) {
+      const dimensions = gridDimensions(count);
+      const maxFeaturedCount = Math.min(3, dimensions.columns, dimensions.rows);
+      for (const direction of ["main", "reverse"]) {
+        for (const compact of [false, true]) {
+          for (let featuredCount = 1; featuredCount <= maxFeaturedCount; featuredCount += 1) {
+            const label = direction === "main" ? "top-left to bottom-right" : "top-right to bottom-left";
+            const sizeLabel = compact ? "compact" : "large";
+            const value = `grid-diagonal-${direction}-${compact ? "compact-" : ""}${featuredCount}`;
+            options.push({
+              value,
+              label: `Diagonal ${label}: ${featuredCount} ${sizeLabel}`,
+            });
+          }
+        }
+      }
+    }
+    return options;
   }
 
   function heroLayoutOptions(count) {
@@ -115,6 +242,10 @@
   }
 
   function arrangementScheme(layout, count) {
+    const diagonalCells = diagonalGridCells(94, 64, 2, layout, count);
+    if (diagonalCells) {
+      return `<svg viewBox="0 0 100 70" aria-hidden="true">${diagonalCells.map(({ x, y, width, height }) => `<rect x="${(x + 3).toFixed(2)}" y="${(y + 3).toFixed(2)}" width="${width.toFixed(2)}" height="${height.toFixed(2)}"/>`).join("")}</svg>`;
+    }
     if (layout === "hero-left") {
       return `<svg viewBox="0 0 100 70" aria-hidden="true"><rect x="3" y="3" width="53" height="64"/><rect x="60" y="3" width="37" height="30"/><rect x="60" y="37" width="37" height="30"/></svg>`;
     }
@@ -351,7 +482,12 @@
     context.strokeStyle = "rgba(255,255,255,.9)";
     context.lineWidth = 1;
     if (design === "grid") {
-      {
+      const diagonalCells = diagonalGridCells(content.width, content.height, between, settings.gridLayout, images.length);
+      if (diagonalCells) {
+        diagonalCells.forEach((cell, index) => {
+          drawPreviewCell(context, images[index], content.x + cell.x, content.y + cell.y, cell.width, cell.height, settings);
+        });
+      } else {
         const match = String(settings.gridLayout || "").match(/^grid-(\d+)x(\d+)$/);
         const columns = match ? Math.max(1, Math.min(images.length, Number(match[1]))) : Math.min(images.length, 2);
         const rows = Math.ceil(images.length / columns);
