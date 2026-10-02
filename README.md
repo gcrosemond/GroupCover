@@ -159,14 +159,16 @@ The generated `site/` directory is ready to publish as a static site.
 
 1. Open a group that has child groups with front images.
 2. Click the camera button near the group image.
-3. Select an aspect ratio and gutter settings.
-4. Select a layout from the visual layout strip.
-5. For Grid, choose one of the dynamically generated schematic arrangements.
-6. For Hero, choose a placement and click the child image to use as the hero.
-7. Review the main preview and click **Generate**.
+3. Choose how many child images to include; **All** is selected by default.
+4. Select an aspect ratio and gutter settings.
+5. Select a layout from the visual layout strip.
+6. For Grid, choose one of the dynamically generated schematic arrangements.
+7. For Hero, choose a placement and click the child image to use as the hero.
+8. Review the main preview and click **Generate**.
 
 Child groups without usable front images are omitted. Generation fails when no
-child images can be loaded.
+child images can be loaded. The image-count selection applies consistently to
+the previews and the generated cover.
 
 ## Development Checks
 

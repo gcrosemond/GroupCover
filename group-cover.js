@@ -428,6 +428,7 @@
   function createModal(groupID) {
     const state = {
       design: "grid",
+      imageCount: 0,
       aspect: "3:4",
       gutterPreset: "small",
       between: 10,
@@ -456,7 +457,7 @@
       hero.width = 520;
       hero.height = Math.max(1, Math.round(hero.width / ratio));
       hero.style.aspectRatio = `${ratio}`;
-      drawLayoutPreview(hero, previewImages, state.design, state);
+      drawLayoutPreview(hero, selectedPreviewImages(), state.design, state);
     }
 
     let previewRequest = 0;
@@ -487,6 +488,7 @@
           args: {
             mode: "preview",
             group_id: groupID,
+            image_count: state.imageCount,
             design: state.design,
             aspect: state.aspect,
             gutter: state.between,
@@ -555,6 +557,7 @@
           args: {
             mode: "preview_all",
             group_id: groupID,
+            image_count: state.imageCount,
             aspect: state.aspect,
             gutter: state.between,
             border: state.border,
@@ -609,6 +612,11 @@
         <div class="group-cover-modal-body">
           <aside class="group-cover-settings">
             <h3>Settings</h3>
+            <label class="group-cover-select-field">Child images
+              <select data-image-count>
+                <option value="0">All</option>
+              </select>
+            </label>
             <fieldset>
               <legend>Aspect</legend>
               <div class="group-cover-choice-grid">
@@ -688,6 +696,25 @@
       });
     }
 
+    function selectedPreviewImages() {
+      return state.imageCount > 0 ? previewImages.slice(0, state.imageCount) : previewImages;
+    }
+
+    function selectedImageCount() {
+      return selectedPreviewImages().length;
+    }
+
+    function updateImageCountOptions() {
+      const select = overlay.querySelector("[data-image-count]");
+      if (!select) return;
+      const total = previewImages.length;
+      if (state.imageCount > total) state.imageCount = 0;
+      select.innerHTML = [`<option value="0">All (${total})</option>`]
+        .concat(Array.from({ length: total }, (_, index) => `<option value="${index + 1}">${index + 1}</option>`))
+        .join("");
+      select.value = String(state.imageCount);
+    }
+
     function updateCompositionOptions(count) {
       const grid = overlay.querySelector("[data-grid-layout-options]");
       const heroLayout = overlay.querySelector("[data-hero-layout-options]");
@@ -700,13 +727,33 @@
       if (!heroLayouts.some((option) => option.value === state.heroLayout)) state.heroLayout = heroLayouts[0].value;
       heroLayout.innerHTML = heroLayouts.map((option) => `<button type="button" class="group-cover-arrangement-option ${option.value === state.heroLayout ? "selected" : ""}" data-hero-layout="${option.value}" title="${escapeHTML(option.label)}">${arrangementScheme(option.value)}<span>${escapeHTML(option.label)}</span></button>`).join("");
       state.heroIndex = Math.min(state.heroIndex, Math.max(0, count - 1));
+      const images = selectedPreviewImages();
       hero.innerHTML = Array.from({ length: Math.max(1, count) }, (_, index) => {
-        const image = previewImages[index];
+        const image = images[index];
         const label = image?.groupName || `Image ${index + 1}`;
         const source = image?.src || PREVIEW_PLACEHOLDER;
         return `<button type="button" class="group-cover-hero-choice ${index === state.heroIndex ? "selected" : ""}" data-hero-index="${index}" title="${escapeHTML(label)}"><img src="${source}" alt=""><span>${escapeHTML(label)}</span></button>`;
       }).join("");
     }
+
+    overlay.querySelector("[data-image-count]").addEventListener("change", (event) => {
+      state.imageCount = Number(event.target.value) || 0;
+      const count = selectedImageCount();
+      if (state.design === "stack" && state.angleAuto) {
+        state.angle = fanDefaultAngle(count);
+        overlay.querySelector("[data-angle]").value = state.angle;
+        overlay.querySelector("[data-angle-value]").textContent = angleLabel(state.angle);
+      }
+      if (state.design === "stack" && state.fanSpacingAuto) {
+        state.fanSpacing = fanDefaultSpacing(count);
+        overlay.querySelector("[data-fan-spacing]").value = state.fanSpacing;
+        overlay.querySelector("[data-fan-spacing-value]").textContent = `${Math.round(state.fanSpacing)}%`;
+      }
+      updateCompositionOptions(count);
+      renderPreviews();
+      scheduleHeroPreview();
+      scheduleThumbnailPreviews();
+    });
 
     overlay.querySelectorAll("[data-aspect]").forEach((element) => element.addEventListener("click", () => {
       state.aspect = element.dataset.aspect;
@@ -739,8 +786,8 @@
       state.design = element.dataset.design;
       state.angleAuto = true;
       if (state.design === "stack") {
-        state.angle = fanDefaultAngle(previewImages.length || 2);
-        state.fanSpacing = fanDefaultSpacing(previewImages.length || 2);
+        state.angle = fanDefaultAngle(selectedImageCount() || 2);
+        state.fanSpacing = fanDefaultSpacing(selectedImageCount() || 2);
       }
       if (state.design === "diagonal") state.angle = diagonalDefaultAngle(state.aspect);
       overlay.querySelector("[data-angle]").value = state.angle;
@@ -786,7 +833,7 @@
     overlay.querySelector("[data-radius]").addEventListener("input", (event) => { state.radius = Number(event.target.value); overlay.querySelector("[data-radius-value]").textContent = `${state.radius}%`; renderPreviews(); scheduleHeroPreview(); scheduleThumbnailPreviews(); });
     overlay.querySelector("[data-alpha]").addEventListener("input", (event) => { state.alpha = Number(event.target.value); overlay.querySelector("[data-alpha-value]").textContent = `${state.alpha}%`; renderPreviews(); scheduleHeroPreview(); scheduleThumbnailPreviews(); });
     overlay.querySelector("[data-angle]").addEventListener("input", (event) => { state.angleAuto = false; state.angle = Number(event.target.value); overlay.querySelector("[data-angle-value]").textContent = angleLabel(state.angle); renderPreviews(); scheduleHeroPreview(); scheduleThumbnailPreviews(); });
-    overlay.querySelector("[data-reset-angle]").addEventListener("click", () => { state.angleAuto = true; state.angle = state.design === "stack" ? fanDefaultAngle(previewImages.length || 2) : diagonalDefaultAngle(state.aspect); overlay.querySelector("[data-angle]").value = state.angle; overlay.querySelector("[data-angle-value]").textContent = angleLabel(state.angle); renderPreviews(); scheduleHeroPreview(); scheduleThumbnailPreviews(); });
+    overlay.querySelector("[data-reset-angle]").addEventListener("click", () => { state.angleAuto = true; state.angle = state.design === "stack" ? fanDefaultAngle(selectedImageCount() || 2) : diagonalDefaultAngle(state.aspect); overlay.querySelector("[data-angle]").value = state.angle; overlay.querySelector("[data-angle-value]").textContent = angleLabel(state.angle); renderPreviews(); scheduleHeroPreview(); scheduleThumbnailPreviews(); });
     overlay.querySelector("[data-custom-between]").addEventListener("input", (event) => { state.between = Number(event.target.value) || 0; renderPreviews(); scheduleHeroPreview(); scheduleThumbnailPreviews(); });
     overlay.querySelector("[data-custom-border]").addEventListener("input", (event) => { state.border = Number(event.target.value) || 0; renderPreviews(); scheduleHeroPreview(); scheduleThumbnailPreviews(); });
     overlay.querySelector("[data-color]").addEventListener("input", (event) => { state.color = event.target.value; renderPreviews(); scheduleHeroPreview(); scheduleThumbnailPreviews(); });
@@ -807,6 +854,7 @@
             pluginId: "group-cover",
             args: {
               group_id: groupID,
+              image_count: state.imageCount,
               design: state.design,
               aspect: state.aspect,
               gutter: state.between,
@@ -838,9 +886,10 @@
     renderPreviews();
     loadPreviewImages(groupID, overlay, (images) => {
       previewImages = images;
-      if (state.design === "stack" && state.angleAuto) state.angle = fanDefaultAngle(images.length);
-      updateCompositionOptions(images.length);
-      if (state.design === "stack" && state.fanSpacingAuto) state.fanSpacing = fanDefaultSpacing(images.length);
+      updateImageCountOptions();
+      if (state.design === "stack" && state.angleAuto) state.angle = fanDefaultAngle(selectedImageCount());
+      updateCompositionOptions(selectedImageCount());
+      if (state.design === "stack" && state.fanSpacingAuto) state.fanSpacing = fanDefaultSpacing(selectedImageCount());
       renderPreviews();
     });
     scheduleHeroPreview();

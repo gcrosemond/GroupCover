@@ -134,6 +134,22 @@
   border-right: 1px solid #3b4650;
 }
 
+.group-cover-select-field {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 1.1rem;
+  font-size: 0.82rem;
+}
+
+.group-cover-select-field select {
+  width: 100%;
+  padding: 0.35rem;
+  border: 1px solid #4b5966;
+  border-radius: 4px;
+  color: #dce5ec;
+  background: #29343e;
+}
+
 .group-cover-choice-grid {
   display: flex;
   flex-wrap: wrap;

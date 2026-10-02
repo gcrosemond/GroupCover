@@ -117,7 +117,14 @@ func run(in input, out *output) error {
 	}
 
 	images := make([]image.Image, 0, len(parent.FindGroup.SubGroups))
+	imageCount := intArg(in.Args, "image_count", 0)
+	if imageCount < 0 {
+		return errors.New("image_count must not be negative")
+	}
 	for _, child := range parent.FindGroup.SubGroups {
+		if imageCount > 0 && len(images) >= imageCount {
+			break
+		}
 		if child.Group.FrontImagePath == "" {
 			continue
 		}
