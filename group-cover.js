@@ -60,9 +60,15 @@
 
   function drawPreviewCover(context, image, x, y, width, height) {
     const scale = Math.max(width / image.width, height / image.height);
-    const drawWidth = image.width * scale;
-    const drawHeight = image.height * scale;
-    context.drawImage(image, x + (width - drawWidth) / 2, y + (height - drawHeight) / 2, drawWidth, drawHeight);
+    const sourceWidth = width / scale;
+    const sourceHeight = height / scale;
+    const rawFocalX = Number(image.focalX);
+    const rawFocalY = Number(image.focalY);
+    const focalX = Math.max(0, Math.min(1, Number.isFinite(rawFocalX) ? rawFocalX : 0.5));
+    const focalY = Math.max(0, Math.min(1, Number.isFinite(rawFocalY) ? rawFocalY : 0.5));
+    const sourceX = (image.width - sourceWidth) * focalX;
+    const sourceY = (image.height - sourceHeight) * focalY;
+    context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
   }
 
   function previewRatio(aspect) {
@@ -319,6 +325,9 @@
   }
 
   function drawPreviewCell(context, image, x, y, width, height, settings) {
+    if (settings.hitRegions && image.groupIndex != null && settings.hitTestDesign !== "stack" && settings.hitTestDesign !== "diagonal") {
+      settings.hitRegions.push({ x, y, width, height, index: image.groupIndex });
+    }
     const radius = Math.min(width, height) * (Math.max(0, Number(settings.radius) || 0) / 100);
     context.save();
     roundedClip(context, x, y, width, height, settings.corner, radius);
@@ -456,6 +465,8 @@
 
   function drawLayoutPreview(canvas, images, design, settings) {
     const context = canvas.getContext("2d");
+    settings.hitRegions = [];
+    settings.hitTestDesign = design;
     const width = canvas.width;
     const height = canvas.height;
     context.fillStyle = "#172029";
@@ -556,6 +567,9 @@
       const images = await Promise.all(entries.map((entry, index) => new Promise((resolve) => {
         const image = new Image();
         image.onload = () => {
+          image.groupIndex = index;
+          image.focalX = 0.5;
+          image.focalY = 0.5;
           image.groupName = entry.name || `Image ${index + 1}`;
           resolve(image);
         };
@@ -589,6 +603,7 @@
       fanSpacingAuto: true,
       gridLayout: "grid-2x2",
       heroIndex: 0,
+      focalIndex: 0,
       heroLayout: "hero-left",
       reverse: false,
       fanReverse: false,
@@ -647,6 +662,7 @@
             grid_layout: state.gridLayout,
             hero_index: state.heroIndex,
             hero_layout: state.heroLayout,
+            focal_points: selectedPreviewImages().map((image) => ({ x: image.focalX ?? 0.5, y: image.focalY ?? 0.5 })),
             reverse: state.reverse,
             fan_reverse: state.fanReverse,
             gutter_color: `${state.color},${state.alpha}`,
@@ -658,10 +674,12 @@
         if (!preview?.data_url) throw new Error("Preview returned no image");
         const image = new Image();
         image.onload = () => {
-          hero.width = image.naturalWidth;
-          hero.height = image.naturalHeight;
-          hero.style.aspectRatio = `${image.naturalWidth} / ${image.naturalHeight}`;
-          hero.getContext("2d").drawImage(image, 0, 0);
+          const width = 520;
+          const height = Math.max(1, Math.round(width / previewRatio(state.aspect)));
+          hero.width = width;
+          hero.height = height;
+          hero.style.aspectRatio = `${width} / ${height}`;
+          hero.getContext("2d").drawImage(image, 0, 0, width, height);
           hero.classList.remove("is-loading");
         };
         image.src = preview.data_url;
@@ -715,6 +733,7 @@
             grid_layout: state.gridLayout,
             hero_index: state.heroIndex,
             hero_layout: state.heroLayout,
+            focal_points: selectedPreviewImages().map((image) => ({ x: image.focalX ?? 0.5, y: image.focalY ?? 0.5 })),
             reverse: state.reverse,
             fan_reverse: state.fanReverse,
             gutter_color: `${state.color},${state.alpha}`,
@@ -758,9 +777,15 @@
         <div class="group-cover-modal-body">
           <aside class="group-cover-settings">
             <h3>Settings</h3>
-            <label class="group-cover-select-field">Child images (0 = all)
+            <label class="group-cover-select-field">Source images (0 = all)
               <input type="number" min="0" value="0" data-image-count>
             </label>
+            <fieldset data-focal-settings>
+              <legend>Crop image</legend>
+              <div class="group-cover-hero-choices" data-focal-index-options></div>
+              <label class="group-cover-range-field">Horizontal position <input type="range" min="0" max="100" value="50" data-focal-x><output data-focal-x-value>50%</output></label>
+              <label class="group-cover-range-field">Vertical position <input type="range" min="0" max="100" value="50" data-focal-y><output data-focal-y-value>50%</output></label>
+            </fieldset>
             <fieldset>
               <legend>Aspect</legend>
               <div class="group-cover-choice-grid">
@@ -817,6 +842,7 @@
             <div class="group-cover-hero-wrap">
               <h3>Preview</h3>
               <canvas class="group-cover-hero-preview is-loading" data-hero-preview data-preview-design="${state.design}" width="520" height="693" aria-label="Selected layout preview"></canvas>
+              <p class="group-cover-preview-help">Drag an image to change which part is shown.</p>
             </div>
             <div class="group-cover-layout-strip" role="listbox" aria-label="Layouts">
               ${[["grid", "Grid"], ["hero", "Hero"], ["diagonal", "Diagonal"], ["filmstrip", "Filmstrip"], ["vertical_strip", "Vertical strip"], ["stack", "Fan"]].map(([value, label]) => `<button type="button" role="option" aria-selected="${value === state.design}" data-design="${value}" class="group-cover-layout-card ${value === state.design ? "selected" : ""}">${layoutPreview(value)}<strong>${label}</strong></button>`).join("")}
@@ -848,6 +874,35 @@
       return selectedPreviewImages().length;
     }
 
+    function activeFocalImage() {
+      const selected = selectedPreviewImages();
+      let image = selected.find((candidate) => candidate.groupIndex === state.focalIndex);
+      if (!image) {
+        image = selected[0];
+        state.focalIndex = image?.groupIndex ?? 0;
+      }
+      return image;
+    }
+
+    function updateFocalControls() {
+      const options = overlay.querySelector("[data-focal-index-options]");
+      const xInput = overlay.querySelector("[data-focal-x]");
+      const yInput = overlay.querySelector("[data-focal-y]");
+      if (!options || !xInput || !yInput) return;
+      const images = selectedPreviewImages();
+      const active = activeFocalImage();
+      options.innerHTML = images.map((image, index) => {
+        const label = image.groupName || `Image ${index + 1}`;
+        return `<button type="button" class="group-cover-hero-choice ${image === active ? "selected" : ""}" data-focal-index="${image.groupIndex}" title="${escapeHTML(label)}"><img src="${image.src}" alt=""><span>${escapeHTML(label)}</span></button>`;
+      }).join("");
+      const focalX = Math.round((active?.focalX ?? 0.5) * 100);
+      const focalY = Math.round((active?.focalY ?? 0.5) * 100);
+      xInput.value = String(focalX);
+      yInput.value = String(focalY);
+      overlay.querySelector("[data-focal-x-value]").textContent = `${focalX}%`;
+      overlay.querySelector("[data-focal-y-value]").textContent = `${focalY}%`;
+    }
+
     function updateImageCountInput() {
       const input = overlay.querySelector("[data-image-count]");
       if (!input) return;
@@ -876,6 +931,7 @@
         const source = image?.src || PREVIEW_PLACEHOLDER;
         return `<button type="button" class="group-cover-hero-choice ${index === state.heroIndex ? "selected" : ""}" data-hero-index="${index}" title="${escapeHTML(label)}"><img src="${source}" alt=""><span>${escapeHTML(label)}</span></button>`;
       }).join("");
+      updateFocalControls();
     }
 
     overlay.querySelector("[data-image-count]").addEventListener("input", (event) => {
@@ -974,6 +1030,27 @@
       updateSelection("[data-hero-index]", "heroIndex", String(state.heroIndex));
       renderPreviews(); scheduleHeroPreview(); scheduleThumbnailPreviews();
     });
+    overlay.querySelector("[data-focal-index-options]").addEventListener("click", (event) => {
+      const option = event.target.closest("[data-focal-index]");
+      if (!option) return;
+      state.focalIndex = Number(option.dataset.focalIndex) || 0;
+      updateFocalControls();
+      renderPreviews(); scheduleHeroPreview(); scheduleThumbnailPreviews();
+    });
+    overlay.querySelector("[data-focal-x]").addEventListener("input", (event) => {
+      const image = activeFocalImage();
+      if (!image) return;
+      image.focalX = Number(event.target.value) / 100;
+      overlay.querySelector("[data-focal-x-value]").textContent = `${event.target.value}%`;
+      renderPreviews(); scheduleHeroPreview(); scheduleThumbnailPreviews();
+    });
+    overlay.querySelector("[data-focal-y]").addEventListener("input", (event) => {
+      const image = activeFocalImage();
+      if (!image) return;
+      image.focalY = Number(event.target.value) / 100;
+      overlay.querySelector("[data-focal-y-value]").textContent = `${event.target.value}%`;
+      renderPreviews(); scheduleHeroPreview(); scheduleThumbnailPreviews();
+    });
     overlay.querySelector("[data-reverse]").addEventListener("change", (event) => { state.reverse = event.target.checked; renderPreviews(); scheduleHeroPreview(); scheduleThumbnailPreviews(); });
     overlay.querySelector("[data-radius]").addEventListener("input", (event) => { state.radius = Number(event.target.value); overlay.querySelector("[data-radius-value]").textContent = `${state.radius}%`; renderPreviews(); scheduleHeroPreview(); scheduleThumbnailPreviews(); });
     overlay.querySelector("[data-alpha]").addEventListener("input", (event) => { state.alpha = Number(event.target.value); overlay.querySelector("[data-alpha-value]").textContent = `${state.alpha}%`; renderPreviews(); scheduleHeroPreview(); scheduleThumbnailPreviews(); });
@@ -1012,6 +1089,7 @@
               grid_layout: state.gridLayout,
               hero_index: state.heroIndex,
               hero_layout: state.heroLayout,
+              focal_points: selectedPreviewImages().map((image) => ({ x: image.focalX ?? 0.5, y: image.focalY ?? 0.5 })),
               reverse: state.reverse,
               fan_reverse: state.fanReverse,
               gutter_color: `${state.color},${state.alpha}`,
@@ -1028,6 +1106,83 @@
     });
 
     document.body.appendChild(overlay);
+    const previewCanvas = overlay.querySelector("[data-hero-preview]");
+    let dragState = null;
+    const canvasPoint = (event) => {
+      const bounds = previewCanvas.getBoundingClientRect();
+      return {
+        x: (event.clientX - bounds.left) * previewCanvas.width / Math.max(bounds.width, 1),
+        y: (event.clientY - bounds.top) * previewCanvas.height / Math.max(bounds.height, 1),
+      };
+    };
+    previewCanvas.addEventListener("pointerdown", (event) => {
+      const point = canvasPoint(event);
+      const hit = [...(state.hitRegions || [])].reverse().find((region) => (
+        point.x >= region.x && point.x <= region.x + region.width
+        && point.y >= region.y && point.y <= region.y + region.height
+      ));
+      const selected = selectedPreviewImages();
+      let imageIndex = hit?.index;
+      if (imageIndex == null && selected.length) {
+        if (state.design === "diagonal") {
+          const frame = previewFrame(previewCanvas, state.aspect);
+          const score = diagonalScore(point.x, point.y, frame, state.angle, state.reverse);
+          imageIndex = selected[Math.max(0, Math.min(selected.length - 1, Math.floor(score * selected.length)))].groupIndex;
+        } else if (state.design === "stack") {
+          const frame = previewFrame(previewCanvas, state.aspect);
+          const position = (point.x - frame.x) / Math.max(frame.width, 1);
+          imageIndex = selected[Math.max(0, Math.min(selected.length - 1, Math.round(position * (selected.length - 1))))].groupIndex;
+        } else {
+          const fallbackIndex = state.design === "hero" ? state.heroIndex : 0;
+          imageIndex = selected[fallbackIndex]?.groupIndex;
+        }
+      }
+      const image = previewImages.find((candidate) => candidate.groupIndex === imageIndex);
+      if (!image) return;
+      state.focalIndex = image.groupIndex;
+      updateFocalControls();
+      const frame = previewFrame(previewCanvas, state.aspect);
+      const target = hit || { width: frame.width, height: frame.height };
+      const scale = Math.max(target.width / image.width, target.height / image.height);
+      dragState = {
+        image,
+        x: point.x,
+        y: point.y,
+        overflowX: Math.max(0, image.width * scale - target.width),
+        overflowY: Math.max(0, image.height * scale - target.height),
+      };
+      previewCanvas.setPointerCapture(event.pointerId);
+      previewCanvas.classList.add("is-panning");
+      event.preventDefault();
+    });
+    previewCanvas.addEventListener("pointermove", (event) => {
+      if (!dragState) return;
+      const point = canvasPoint(event);
+      const deltaX = point.x - dragState.x;
+      const deltaY = point.y - dragState.y;
+      if (dragState.overflowX > 0) dragState.image.focalX = Math.max(0, Math.min(1, dragState.image.focalX - deltaX / dragState.overflowX));
+      if (dragState.overflowY > 0) dragState.image.focalY = Math.max(0, Math.min(1, dragState.image.focalY - deltaY / dragState.overflowY));
+      dragState.x = point.x;
+      dragState.y = point.y;
+      const xInput = overlay.querySelector("[data-focal-x]");
+      const yInput = overlay.querySelector("[data-focal-y]");
+      xInput.value = String(Math.round(dragState.image.focalX * 100));
+      yInput.value = String(Math.round(dragState.image.focalY * 100));
+      overlay.querySelector("[data-focal-x-value]").textContent = `${xInput.value}%`;
+      overlay.querySelector("[data-focal-y-value]").textContent = `${yInput.value}%`;
+      renderPreviews();
+      event.preventDefault();
+    });
+    const stopDragging = (event) => {
+      if (!dragState) return;
+      if (event?.pointerId != null && previewCanvas.hasPointerCapture(event.pointerId)) previewCanvas.releasePointerCapture(event.pointerId);
+      dragState = null;
+      previewCanvas.classList.remove("is-panning");
+      scheduleHeroPreview();
+      scheduleThumbnailPreviews();
+    };
+    previewCanvas.addEventListener("pointerup", stopDragging);
+    previewCanvas.addEventListener("pointercancel", stopDragging);
     renderPreviews();
     loadPreviewImages(groupID, overlay, (images) => {
       previewImages = images;

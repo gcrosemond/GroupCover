@@ -67,6 +67,16 @@ type groupResponse struct {
 	} `json:"findGroup"`
 }
 
+type focalPoint struct {
+	x float64
+	y float64
+}
+
+type composedImage struct {
+	image image.Image
+	focal focalPoint
+}
+
 type graphQLError struct {
 	Message string `json:"message"`
 }
@@ -137,13 +147,13 @@ func run(in input, out *output) error {
 		return fmt.Errorf("group %s has no child groups or scenes", groupID)
 	}
 
-	images := make([]image.Image, 0, len(sources))
+	rawImages := make([]image.Image, 0, len(sources))
 	imageCount := intArg(in.Args, "image_count", 0)
 	if imageCount < 0 {
 		return errors.New("image_count must not be negative")
 	}
 	for _, source := range sources {
-		if imageCount > 0 && len(images) >= imageCount {
+		if imageCount > 0 && len(rawImages) >= imageCount {
 			break
 		}
 		if source.path == "" {
@@ -155,11 +165,16 @@ func run(in input, out *output) error {
 			fmt.Fprintf(os.Stderr, "group-cover: skipping %s %s image: %v\n", source.kind, source.id, err)
 			continue
 		}
-		images = append(images, img)
+		rawImages = append(rawImages, img)
 	}
 
-	if len(images) == 0 {
+	if len(rawImages) == 0 {
 		return errors.New("none of the child groups or scenes have usable images")
+	}
+	focals := focalPointsArg(in.Args, len(rawImages))
+	images := make([]composedImage, len(rawImages))
+	for index, source := range rawImages {
+		images[index] = composedImage{image: source, focal: focals[index]}
 	}
 	if stringArg(in.Args, "mode") == "preview" {
 		in.Args["preview"] = true
@@ -359,7 +374,7 @@ func (c *graphQLClient) fetchImage(rawURL string) (image.Image, error) {
 	return decoded, nil
 }
 
-func compose(images []image.Image, args map[string]interface{}) (image.Image, error) {
+func compose(images []composedImage, args map[string]interface{}) (image.Image, error) {
 	fullWidth, fullHeight := canvasSize(stringArg(args, "aspect"))
 	width, height := fullWidth, fullHeight
 	previewScale := 1.0
@@ -442,7 +457,7 @@ func canvasSize(aspect string) (int, int) {
 	}
 }
 
-func drawGrid(canvas draw.Image, images []image.Image, area image.Rectangle, gutter int, corner string, radius int, layout string) {
+func drawGrid(canvas draw.Image, images []composedImage, area image.Rectangle, gutter int, corner string, radius int, layout string) {
 	if len(images) == 0 {
 		return
 	}
@@ -647,7 +662,7 @@ func diagonalGridCells(area image.Rectangle, gutter int, layout string, count in
 	return cells
 }
 
-func drawHero(canvas draw.Image, images []image.Image, area image.Rectangle, gutter int, corner string, radius, heroIndex int, layout string) {
+func drawHero(canvas draw.Image, images []composedImage, area image.Rectangle, gutter int, corner string, radius, heroIndex int, layout string) {
 	if len(images) == 0 {
 		return
 	}
@@ -669,7 +684,7 @@ func drawHero(canvas draw.Image, images []image.Image, area image.Rectangle, gut
 	drawMosaic(canvas, images, area, gutter, corner, radius, heroIndex, layout == "hero-right")
 }
 
-func drawHeroVertical(canvas draw.Image, images []image.Image, area image.Rectangle, gutter int, corner string, radius, heroIndex int, heroBottom bool) {
+func drawHeroVertical(canvas draw.Image, images []composedImage, area image.Rectangle, gutter int, corner string, radius, heroIndex int, heroBottom bool) {
 	remaining := withoutImage(images, heroIndex)
 	heroHeight := int(float64(area.Dy()-gutter) * 0.58)
 	remainingHeight := area.Dy() - gutter - heroHeight
@@ -683,8 +698,8 @@ func drawHeroVertical(canvas draw.Image, images []image.Image, area image.Rectan
 	drawGridRemainder(canvas, remaining, image.Rect(area.Min.X, remainingY, area.Max.X, remainingY+remainingHeight), gutter, corner, radius)
 }
 
-func withoutImage(images []image.Image, index int) []image.Image {
-	remaining := make([]image.Image, 0, len(images)-1)
+func withoutImage(images []composedImage, index int) []composedImage {
+	remaining := make([]composedImage, 0, len(images)-1)
 	for imageIndex, source := range images {
 		if imageIndex != index {
 			remaining = append(remaining, source)
@@ -708,7 +723,7 @@ func gridColumns(layout string, count int) int {
 	return minInt(maxInt(2, int(math.Ceil(math.Sqrt(float64(count))))), count)
 }
 
-func drawMosaic(canvas draw.Image, images []image.Image, area image.Rectangle, gutter int, corner string, radius, heroIndex int, largeRight bool) {
+func drawMosaic(canvas draw.Image, images []composedImage, area image.Rectangle, gutter int, corner string, radius, heroIndex int, largeRight bool) {
 	if len(images) == 0 {
 		return
 	}
@@ -722,7 +737,7 @@ func drawMosaic(canvas draw.Image, images []image.Image, area image.Rectangle, g
 		remainingX = area.Min.X
 	}
 	drawMaskedCell(canvas, images[heroIndex], image.Rect(largeX, area.Min.Y, largeX+largeWidth, area.Max.Y), corner, radius)
-	remaining := make([]image.Image, 0, len(images)-1)
+	remaining := make([]composedImage, 0, len(images)-1)
 	for index, source := range images {
 		if index != heroIndex {
 			remaining = append(remaining, source)
@@ -731,7 +746,7 @@ func drawMosaic(canvas draw.Image, images []image.Image, area image.Rectangle, g
 	drawGridRemainder(canvas, remaining, image.Rect(remainingX, area.Min.Y, remainingX+smallWidth, area.Max.Y), gutter, corner, radius)
 }
 
-func drawGridRemainder(canvas draw.Image, images []image.Image, area image.Rectangle, gutter int, corner string, radius int) {
+func drawGridRemainder(canvas draw.Image, images []composedImage, area image.Rectangle, gutter int, corner string, radius int) {
 	if len(images) == 0 {
 		return
 	}
@@ -751,7 +766,7 @@ func drawGridRemainder(canvas draw.Image, images []image.Image, area image.Recta
 	}
 }
 
-func drawFilmstrip(canvas draw.Image, images []image.Image, area image.Rectangle, gutter int, corner string, radius int) {
+func drawFilmstrip(canvas draw.Image, images []composedImage, area image.Rectangle, gutter int, corner string, radius int) {
 	if len(images) == 0 {
 		return
 	}
@@ -762,7 +777,7 @@ func drawFilmstrip(canvas draw.Image, images []image.Image, area image.Rectangle
 	}
 }
 
-func drawVerticalStrip(canvas draw.Image, images []image.Image, area image.Rectangle, gutter int, corner string, radius int) {
+func drawVerticalStrip(canvas draw.Image, images []composedImage, area image.Rectangle, gutter int, corner string, radius int) {
 	if len(images) == 0 {
 		return
 	}
@@ -773,7 +788,7 @@ func drawVerticalStrip(canvas draw.Image, images []image.Image, area image.Recta
 	}
 }
 
-func drawStack(canvas draw.Image, images []image.Image, area image.Rectangle, corner string, radius int, angle, spacing, distance float64, reverse bool) {
+func drawStack(canvas draw.Image, images []composedImage, area image.Rectangle, corner string, radius int, angle, spacing, distance float64, reverse bool) {
 	count := len(images)
 	if count == 0 {
 		return
@@ -807,7 +822,7 @@ func fanDefaultSpacing(count int) float64 {
 	return total * 100 / float64(count-1)
 }
 
-func drawDiagonal(canvas draw.Image, images []image.Image, area image.Rectangle, gutter int, corner string, radius int, angle float64, reverse bool) {
+func drawDiagonal(canvas draw.Image, images []composedImage, area image.Rectangle, gutter int, corner string, radius int, angle float64, reverse bool) {
 	if len(images) == 0 {
 		return
 	}
@@ -875,7 +890,7 @@ func diagonalScoreGradient(width, height int, angle float64, reverse bool) float
 	return math.Sqrt((du/float64(maxInt(width, 1)))*(du/float64(maxInt(width, 1))) + (dv/float64(maxInt(height, 1)))*(dv/float64(maxInt(height, 1))))
 }
 
-func drawMaskedCell(destination draw.Image, source image.Image, target image.Rectangle, corner string, radius int) {
+func drawMaskedCell(destination draw.Image, source composedImage, target image.Rectangle, corner string, radius int) {
 	if target.Dx() <= 0 || target.Dy() <= 0 {
 		return
 	}
@@ -891,10 +906,11 @@ func drawMaskedCell(destination draw.Image, source image.Image, target image.Rec
 	}
 }
 
-func drawRotatedCell(destination draw.Image, source image.Image, cell image.Rectangle, centerX, centerY, angle float64, corner string, radius int) {
-	prepared := imaging.Fill(source, cell.Dx(), cell.Dy(), imaging.Center, imaging.Lanczos)
+func drawRotatedCell(destination draw.Image, source composedImage, cell image.Rectangle, centerX, centerY, angle float64, corner string, radius int) {
+	prepared := image.NewRGBA(cell)
+	drawCover(prepared, source, cell)
 	masked := image.NewRGBA(cell)
-	drawMaskedCell(masked, prepared, cell, corner, radius)
+	drawMaskedCell(masked, composedImage{image: prepared, focal: focalPoint{x: 0.5, y: 0.5}}, cell, corner, radius)
 	rotated := imaging.Rotate(masked, -angle, color.Transparent)
 	position := image.Pt(int(math.Round(centerX-float64(rotated.Bounds().Dx())/2)), int(math.Round(centerY-float64(rotated.Bounds().Dy())/2)))
 	draw.Draw(destination, rotated.Bounds().Add(position), rotated, rotated.Bounds().Min, draw.Over)
@@ -958,9 +974,18 @@ func clampInt(value, low, high int) int {
 	return value
 }
 
-func drawCover(destination draw.Image, source image.Image, target image.Rectangle) {
-	resized := imaging.Fill(source, target.Dx(), target.Dy(), imaging.Center, imaging.Lanczos)
-	draw.Draw(destination, target, resized, resized.Bounds().Min, draw.Src)
+func drawCover(destination draw.Image, source composedImage, target image.Rectangle) {
+	if target.Dx() <= 0 || target.Dy() <= 0 || source.image.Bounds().Dx() <= 0 || source.image.Bounds().Dy() <= 0 {
+		return
+	}
+	sourceBounds := source.image.Bounds()
+	scale := math.Max(float64(target.Dx())/float64(sourceBounds.Dx()), float64(target.Dy())/float64(sourceBounds.Dy()))
+	resized := imaging.Resize(source.image, maxInt(1, int(math.Round(float64(sourceBounds.Dx())*scale))), maxInt(1, int(math.Round(float64(sourceBounds.Dy())*scale))), imaging.Lanczos)
+	maxX := maxInt(0, resized.Bounds().Dx()-target.Dx())
+	maxY := maxInt(0, resized.Bounds().Dy()-target.Dy())
+	x := int(math.Round(clampFloat(source.focal.x, 0, 1) * float64(maxX)))
+	y := int(math.Round(clampFloat(source.focal.y, 0, 1) * float64(maxY)))
+	draw.Draw(destination, target, resized, image.Pt(x, y), draw.Src)
 }
 
 func stringArg(args map[string]interface{}, key string) string {
@@ -975,6 +1000,40 @@ func stringArg(args map[string]interface{}, key string) string {
 		return strconv.FormatInt(int64(numberValue), 10)
 	}
 	return ""
+}
+
+func focalPointsArg(args map[string]interface{}, count int) []focalPoint {
+	points := make([]focalPoint, count)
+	for index := range points {
+		points[index] = focalPoint{x: 0.5, y: 0.5}
+	}
+	values, ok := args["focal_points"].([]interface{})
+	if !ok {
+		return points
+	}
+	for index := 0; index < len(values) && index < len(points); index++ {
+		value, ok := values[index].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if x, ok := value["x"].(float64); ok {
+			points[index].x = clampFloat(x, 0, 1)
+		}
+		if y, ok := value["y"].(float64); ok {
+			points[index].y = clampFloat(y, 0, 1)
+		}
+	}
+	return points
+}
+
+func clampFloat(value, low, high float64) float64 {
+	if value < low {
+		return low
+	}
+	if value > high {
+		return high
+	}
+	return value
 }
 
 func intArg(args map[string]interface{}, key string, fallback int) int {

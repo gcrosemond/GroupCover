@@ -341,7 +341,17 @@
   object-fit: contain;
   border-radius: 5px;
   background: #172029;
-  cursor: default;
+  cursor: grab;
+}
+
+.group-cover-hero-preview.is-panning {
+  cursor: grabbing;
+}
+
+.group-cover-preview-help {
+  margin: 0.35rem 0 0;
+  color: #aebbc6;
+  font-size: 0.78rem;
 }
 
 .group-cover-hero-preview.is-loading,
