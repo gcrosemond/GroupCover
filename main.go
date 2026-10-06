@@ -57,6 +57,12 @@ type groupResponse struct {
 				FrontImagePath string `json:"front_image_path"`
 			} `json:"group"`
 		} `json:"sub_groups"`
+		Scenes []struct {
+			ID    string `json:"id"`
+			Paths struct {
+				Screenshot string `json:"screenshot"`
+			} `json:"paths"`
+		} `json:"scenes"`
 		FrontImagePath string `json:"front_image_path"`
 	} `json:"findGroup"`
 }
@@ -112,33 +118,48 @@ func run(in input, out *output) error {
 	if err != nil {
 		return err
 	}
-	if len(parent.FindGroup.SubGroups) == 0 {
-		return fmt.Errorf("group %s has no child groups", groupID)
+	type imageSource struct {
+		kind string
+		id   string
+		path string
+	}
+	sources := make([]imageSource, 0, len(parent.FindGroup.SubGroups)+len(parent.FindGroup.Scenes))
+	if len(parent.FindGroup.SubGroups) > 0 {
+		for _, child := range parent.FindGroup.SubGroups {
+			sources = append(sources, imageSource{kind: "child group", id: child.Group.ID, path: child.Group.FrontImagePath})
+		}
+	} else {
+		for _, scene := range parent.FindGroup.Scenes {
+			sources = append(sources, imageSource{kind: "scene", id: scene.ID, path: scene.Paths.Screenshot})
+		}
+	}
+	if len(sources) == 0 {
+		return fmt.Errorf("group %s has no child groups or scenes", groupID)
 	}
 
-	images := make([]image.Image, 0, len(parent.FindGroup.SubGroups))
+	images := make([]image.Image, 0, len(sources))
 	imageCount := intArg(in.Args, "image_count", 0)
 	if imageCount < 0 {
 		return errors.New("image_count must not be negative")
 	}
-	for _, child := range parent.FindGroup.SubGroups {
+	for _, source := range sources {
 		if imageCount > 0 && len(images) >= imageCount {
 			break
 		}
-		if child.Group.FrontImagePath == "" {
+		if source.path == "" {
 			continue
 		}
 
-		img, err := client.fetchImage(child.Group.FrontImagePath)
+		img, err := client.fetchImage(source.path)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "group-cover: skipping child %s image: %v\n", child.Group.ID, err)
+			fmt.Fprintf(os.Stderr, "group-cover: skipping %s %s image: %v\n", source.kind, source.id, err)
 			continue
 		}
 		images = append(images, img)
 	}
 
 	if len(images) == 0 {
-		return errors.New("none of the child groups have usable front images")
+		return errors.New("none of the child groups or scenes have usable images")
 	}
 	if stringArg(in.Args, "mode") == "preview" {
 		in.Args["preview"] = true
@@ -276,6 +297,7 @@ func (c *graphQLClient) findGroup(id string) (groupResponse, error) {
             name
             front_image_path
 		 sub_groups { group { id front_image_path } }
+		 scenes { id paths { screenshot } }
         }
     }`
 	var response groupResponse

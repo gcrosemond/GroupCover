@@ -1,7 +1,8 @@
 # Group Cover
 
 Group Cover is a Stash plugin that generates a group's front image from the
-front images of its child groups.
+front images of its child groups, or from scene screenshots when the group has
+no child groups.
 
 The plugin adds a camera button to the group page. Clicking it opens a modal
 where the composition can be previewed and adjusted before the cover is saved.
@@ -18,16 +19,17 @@ Clicking the button opens the layout and generation modal:
 
 ## Features
 
-- Uses child group front images as the source material.
+- Uses child group front images as the source material, falling back to scene
+  screenshots for groups without child groups.
 - Supports portrait, landscape, square, and widescreen output aspects.
 - Provides configurable gutters, borders, colors, opacity, and corner styles.
 - Shows browser previews before generation and uses the same composition logic
   for the final image.
 - Supports these layouts:
   - **Grid**: dynamically generated row and column arrangements based on the
-    number of child images, including main- and reverse-diagonal arrangements
+    number of source images, including main- and reverse-diagonal arrangements
     with one, two, or three larger images in regular or compact sizes.
-  - **Hero**: choose a child image visually and place it left, right, top,
+  - **Hero**: choose a source image visually and place it left, right, top,
     bottom, or centered when enough images are available.
   - **Diagonal**: sliced diagonal composition with adjustable direction and
     angle.
@@ -158,17 +160,17 @@ The generated `site/` directory is ready to publish as a static site.
 
 ## Usage
 
-1. Open a group that has child groups with front images.
+1. Open a group that has child groups with front images, or scenes with screenshots.
 2. Click the camera button near the group image.
-3. Choose how many child images to include; enter `0` to include all images.
+3. Choose how many source images to include; enter `0` to include all images.
 4. Select an aspect ratio and gutter settings.
 5. Select a layout from the visual layout strip.
 6. For Grid, choose one of the dynamically generated schematic arrangements.
-7. For Hero, choose a placement and click the child image to use as the hero.
+7. For Hero, choose a placement and click the source image to use as the hero.
 8. Review the main preview and click **Generate**.
 
 Child groups without usable front images are omitted. Generation fails when no
-child images can be loaded. The image-count selection applies consistently to
+source images can be loaded. The image-count selection applies consistently to
 the previews and the generated cover.
 
 ## Development Checks

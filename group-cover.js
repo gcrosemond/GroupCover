@@ -540,9 +540,19 @@
     const status = overlay.querySelector("[data-status]");
     try {
       const data = await gql(`query GroupCoverPreview($id: ID!) {
-        findGroup(id: $id) { sub_groups { group { name front_image_path } } }
+        findGroup(id: $id) {
+          sub_groups { group { name front_image_path } }
+          scenes { id title paths { screenshot } }
+        }
       }`, { id: groupID });
-      const entries = (data.findGroup?.sub_groups ?? []).map((item) => item.group).filter((group) => group?.front_image_path);
+      const group = data.findGroup ?? {};
+      const childEntries = (group.sub_groups ?? []).map((item) => item.group).filter((child) => child?.front_image_path);
+      const entries = childEntries.length > 0
+        ? childEntries
+        : (group.scenes ?? []).map((scene) => ({
+          name: scene.title || `Scene ${scene.id}`,
+          front_image_path: scene.paths?.screenshot,
+        })).filter((scene) => scene.front_image_path);
       const images = await Promise.all(entries.map((entry, index) => new Promise((resolve) => {
         const image = new Image();
         image.onload = () => {
@@ -554,7 +564,7 @@
       })));
       const usableImages = images.filter(Boolean);
       onLoaded(usableImages);
-      status.textContent = usableImages.length ? `${usableImages.length} child images loaded` : "No child images available for preview";
+      status.textContent = usableImages.length ? `${usableImages.length} source images loaded` : "No child groups or scenes available for preview";
     } catch (error) {
       status.textContent = "Could not load image previews";
       logError(`Could not load previews for group ${groupID}: ${error.message}`);
@@ -674,7 +684,7 @@
             renderPreviews();
           }
         }
-        status.textContent = `${preview.images_used} child images loaded`;
+        status.textContent = `${preview.images_used} source images loaded`;
         updateCompositionOptions(preview.images_used);
       } catch (error) {
         if (requestID !== previewRequest) return;
@@ -1037,8 +1047,8 @@
     button.id = BUTTON_ID;
     button.type = "button";
     button.className = "btn btn-secondary btn-sm group-cover-generate-button";
-    button.title = "Generate a cover from child groups";
-    button.setAttribute("aria-label", "Generate a cover from child groups");
+    button.title = "Generate a cover from child groups or scenes";
+    button.setAttribute("aria-label", "Generate a cover from child groups or scenes");
     button.innerHTML = `<svg class="group-cover-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3" y="6" width="14" height="13" rx="2"></rect><path d="M7 6l1.5-3h4L14 6"></path><circle cx="10" cy="12.5" r="3"></circle><path d="M18 5v6M15 8h6"></path></svg>`;
     button.addEventListener("click", () => createModal(groupID));
 
@@ -1070,9 +1080,14 @@
     if (checkedPath === currentPath || checking) return;
     checking = true;
     try {
-      const data = await gql(`query GroupCoverChildren($id: ID!) { findGroup(id: $id) { sub_groups { group { id } } } }`, { id: groupID });
+      const data = await gql(`query GroupCoverSources($id: ID!) {
+        findGroup(id: $id) {
+          sub_groups { group { id } }
+          scenes { id }
+        }
+      }`, { id: groupID });
       checkedPath = currentPath;
-      if (data.findGroup?.sub_groups?.length) addButton(groupID);
+      if (data.findGroup?.sub_groups?.length || data.findGroup?.scenes?.length) addButton(groupID);
     } catch (error) {
       checkedPath = currentPath;
       logError(`Could not inspect group ${groupID}: ${error.message}`);

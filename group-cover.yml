@@ -1,6 +1,6 @@
 name: Group Cover
 
-description: Generate a portrait cover image from a group's child group images.
+description: Generate a portrait cover image from child groups or scene screenshots.
 version: 0.2.0
 url: https://github.com/gcrosemond/GroupCover
 
@@ -16,4 +16,4 @@ ui:
 
 tasks:
   - name: Generate group cover
-    description: Generate and save a cover image from the group's child group front images.
+    description: Generate and save a cover image from child groups or scene screenshots.
